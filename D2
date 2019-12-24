@@ -1,0 +1,51 @@
+FROM docker.elastic.co/beats/filebeat-oss:7.5.0 as filebeat-oss
+
+#基础镜像，如果本地没有，会从远程仓库拉取。
+#FROM openjdk:8-jdk-slim
+#FROM docker.io/store/oracle/serverjre:8
+FROM 192.168.1.163:81/oracle-serverjre:8
+
+#镜像的制作人
+MAINTAINER 365384722@qq.com
+
+#工作目录
+WORKDIR /app/
+
+COPY --from=filebeat-oss /usr/share/filebeat /usr/share/filebeat
+
+#filebeat.inputs.enabled 默认为false，切记改为 true 否则坑
+#Array of hosts to connect to. hosts是string数组类型，支持多个kafka实力地址(此处不是配置zookeeper地址)
+RUN set -x && \
+echo "filebeat.inputs:" > filebeat.yml && \
+echo "- type: log" >> filebeat.yml && \
+echo "  enabled: true" >> filebeat.yml && \
+echo "  paths:" >> filebeat.yml && \
+echo "    - /var/log/spring_logs/*.log" >> filebeat.yml && \
+echo "output.kafka:" >> filebeat.yml && \
+echo "  hosts: ["host01:9092","host02:9092","host03:9092"]" >> filebeat.yml && \
+echo "  #kafka的topic名称" >> filebeat.yml && \
+echo "  topic: spring_logs" >> filebeat.yml && \
+
+echo "#!/bin/bash" > entrypoint.sh && \
+echo "nohup /usr/share/filebeat/filebeat -c /app/filebeat.yml > /dev/null &" >> entrypoint.sh && \
+echo "java -Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom -jar app.jar" >> entrypoint.sh && \
+chmod +x entrypoint.sh
+
+#在容器中创建挂载点，可以多个
+VOLUME ["/tmp"]
+
+#声明了容器应该打开的端口并没有实际上将它打开
+EXPOSE 8080
+
+#定义参数
+ARG JAR_FILE
+ARG BRANCH
+ARG ENV=dev
+
+#设置环境变量
+ENV branch=${BRANCH} profile=${ENV} ENV=${ENV} APOLLO_META=http://apollo.meta
+
+#拷贝本地文件到镜像中
+COPY ${JAR_FILE} app.jar
+
+ENTRYPOINT ["./entrypoint.sh"]
